@@ -19,8 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +30,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import ui.main.MainUiState
 import ui.main.MainViewModel
@@ -60,22 +64,44 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FastFeastTheme {
+                // PASO 2: CREAR EL NAVCONTROLLER
+                val navController = rememberNavController()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-                Scaffold(containerColor = Color(0xFFF5F5F5)) { innerPadding ->
-                    if (uiState.isLoading) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
+                // PASO 3: CONFIGURAR EL NAVHOST QUE CONTENDRÁ LAS PANTALLAS
+                NavHost(navController = navController, startDestination = AppScreen.Principal.route) {
+
+                    // Definimos la ruta para la pantalla principal
+                    composable(route = AppScreen.Principal.route) {
+                        Scaffold(containerColor = Color(0xFFF5F5F5)) { innerPadding ->
+                            if (uiState.isLoading) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            } else {
+                                PantallaPrincipal(
+                                    uiState = uiState,
+                                    modifier = Modifier.padding(innerPadding),
+                                    // Le pasamos la acción de navegación
+                                    onPlatilloClick = { platilloId ->
+                                        navController.navigate(AppScreen.Detalles.createRoute(platilloId))
+                                    }
+                                )
+                            }
                         }
-                    } else {
-                        // Pasamos el padding directamente a la LazyColumn
-                        PantallaPrincipal(
-                            uiState = uiState,
-                            modifier = Modifier.padding(innerPadding)
-                        )
+                    }
+
+                    // Definimos la ruta para la pantalla de detalles
+                    composable(
+                        route = AppScreen.Detalles.route,
+                        arguments = listOf(navArgument("platilloId") { type = NavType.IntType })
+                    ) { backStackEntry ->
+                        // Extraemos el ID del platillo de los argumentos de la ruta
+                        val platilloId = backStackEntry.arguments?.getInt("platilloId") ?: -1
+                        PantallaDetalles(platilloId = platilloId, navController = navController)
                     }
                 }
             }
@@ -83,23 +109,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 // --- PANTALLA PRINCIPAL ---
 @Composable
-fun PantallaPrincipal(uiState: MainUiState, modifier: Modifier = Modifier) {
-    // LazyColumn es el contenedor principal y único que se desplaza verticalmente.
+fun PantallaPrincipal(
+    uiState: MainUiState,
+    modifier: Modifier = Modifier,
+    onPlatilloClick: (Int) -> Unit // Acepta el ID del platillo
+) {
     LazyColumn(
-        modifier = modifier.fillMaxSize() // El modifier ya incluye el padding del Scaffold
+        modifier = modifier.fillMaxSize()
     ) {
-        // Cada 'item' es un bloque de contenido estático
-        item {
-            CabeceraApp()
-        }
-        item {
-            BarraBusqueda()
-        }
-        item {
-            SeccionCategorias(categorias = uiState.categorias)
-        }
+        item { CabeceraApp() }
+        item { BarraBusqueda() }
+        item { SeccionCategorias(categorias = uiState.categorias) }
         item {
             Text(
                 text = "Platillos Populares",
@@ -108,11 +131,12 @@ fun PantallaPrincipal(uiState: MainUiState, modifier: Modifier = Modifier) {
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp)
             )
         }
-
-        // 'items' toma la lista de platillos y crea un elemento por cada uno.
-        // ESTA es la forma correcta de renderizar una lista dinámica dentro de LazyColumn.
         items(uiState.platillos) { platillo ->
-            ItemPlatillo(platillo = platillo, onPlatilloClick = {})
+            // Pasamos la lambda de navegación al item
+            ItemPlatillo(
+                platillo = platillo,
+                onPlatilloClick = { onPlatilloClick(platillo.id) } // Llamamos con el ID
+            )
         }
     }
 }
@@ -211,15 +235,13 @@ fun ItemCategoria(categoria: Categoria, onCategoriaClick: () -> Unit) {
 }
 
 @Composable
-fun ItemPlatillo(platillo: Platillo, onPlatilloClick: (Platillo) -> Unit) {
+fun ItemPlatillo(platillo: Platillo, onPlatilloClick: () -> Unit) { // La firma cambia ligeramente
     Card(
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        // ... (resto de tus modificadores sin cambios)
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable { onPlatilloClick(platillo) }
+            .clickable { onPlatilloClick() } // Llama a la lambda recibida
     ) {
         Row(modifier = Modifier.padding(12.dp)) {
             AsyncImage(
@@ -231,9 +253,7 @@ fun ItemPlatillo(platillo: Platillo, onPlatilloClick: (Platillo) -> Unit) {
                 contentScale = ContentScale.Crop,
                 placeholder = painterResource(id = R.drawable.ic_launcher_background)
             )
-
             Spacer(modifier = Modifier.width(16.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = platillo.nombre, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
@@ -252,6 +272,33 @@ fun ItemPlatillo(platillo: Platillo, onPlatilloClick: (Platillo) -> Unit) {
     }
 }
 
+@Composable
+fun PantallaDetalles(platilloId: Int, navController: NavController) {
+    Scaffold { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Pantalla de Detalles",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Has navegado al platillo con ID: $platilloId",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(onClick = { navController.popBackStack() }) { // Botón para volver atrás
+                Text("Volver")
+            }
+        }
+    }
+}
 
 // --- VISTA PREVIA ---
 @Preview(showBackground = true, showSystemUi = true)
@@ -268,7 +315,8 @@ fun PantallaPrincipalPreview() {
             ),
             isLoading = false
         )
-        PantallaPrincipal(uiState = previewState)
+        // La preview no necesita el controlador de navegación
+        PantallaPrincipal(uiState = previewState, onPlatilloClick = {})
     }
 }
 
