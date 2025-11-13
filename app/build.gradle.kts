@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("kotlin-parcelize")
 }
 
 android {
@@ -71,5 +72,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
     implementation("io.coil-kt:coil-compose:2.6.0")
     val nav_version = "2.7.7"
+    implementation("com.google.code.gson:gson:2.10.1")
     implementation("androidx.navigation:navigation-compose:${nav_version}")
 }
