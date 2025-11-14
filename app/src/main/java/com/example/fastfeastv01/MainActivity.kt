@@ -1,5 +1,6 @@
 package com.example.fastfeastv01
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +44,15 @@ import ui.main.MainUiState
 import ui.main.MainViewModel
 import com.example.fastfeastv01.ui.theme.FastFeastTheme
 import java.net.URLDecoder
+import androidx.lifecycle.viewmodel.compose.viewModel
+import ui.cart.CartViewModel
+import ui.cart.PantallaCarrito
+import java.nio.charset.StandardCharsets
+import data.UserPreferencesRepository
+import ui.auth.AuthViewModel
+import ui.auth.AuthViewModelFactory
+import ui.auth.PantallaLogin
+import androidx.compose.material.icons.automirrored.filled.Logout
 
 // --- MODELOS DE DATOS ---
 data class Platillo(
@@ -59,19 +70,30 @@ data class Categoria(
 
 // --- ACTIVIDAD PRINCIPAL ---
 class MainActivity : ComponentActivity() {
+    // ViewModel para la pantalla principal
     private val viewModel: MainViewModel by viewModels()
+    // ViewModel compartido para el carrito
+    private val cartViewModel: CartViewModel by viewModels()
 
-    @OptIn(ExperimentalMaterial3Api::class) // Necesario para TopAppBar
+    private lateinit var userPreferencesRepository: UserPreferencesRepository
+    private val authViewModel: AuthViewModel by viewModels {
+        AuthViewModelFactory(userPreferencesRepository)
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        userPreferencesRepository = UserPreferencesRepository(applicationContext)
         enableEdgeToEdge()
         setContent {
             FastFeastTheme {
                 val navController = rememberNavController()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+                // --- Grafo de Navegación ---
                 NavHost(navController = navController, startDestination = AppScreen.Principal.route) {
 
+                    // --- Ruta a la Pantalla Principal ---
                     composable(route = AppScreen.Principal.route) {
                         Scaffold(containerColor = Color(0xFFF5F5F5)) { innerPadding ->
                             if (uiState.isLoading) {
@@ -84,12 +106,16 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(innerPadding),
                                     onPlatilloClick = { platillo ->
                                         navController.navigate(AppScreen.Detalles.createRoute(platillo))
-                                    }
+                                    },
+                                    authViewModel = authViewModel, // <-- AÑADE ESTO
+                                    navController = navController  // <-- AÑADE ESTO
                                 )
+
                             }
                         }
                     }
 
+                    // --- Ruta a la Pantalla de Detalles ---
                     composable(
                         route = AppScreen.Detalles.route,
                         arguments = listOf(
@@ -101,18 +127,36 @@ class MainActivity : ComponentActivity() {
                         )
                     ) { backStackEntry ->
                         val arguments = requireNotNull(backStackEntry.arguments)
+                        // Decodifica la URL y la descripción para obtener los valores originales
                         val platillo = Platillo(
                             id = arguments.getInt("platilloId"),
                             nombre = arguments.getString("platilloNombre") ?: "",
-                            descripcion = URLDecoder.decode(arguments.getString("platilloDescripcion") ?: "", "UTF-8"),
+                            descripcion = URLDecoder.decode(arguments.getString("platilloDescripcion") ?: "", StandardCharsets.UTF_8.toString()),
                             precio = arguments.getFloat("platilloPrecio").toDouble(),
-                            imagenUrl = URLDecoder.decode(arguments.getString("platilloImagenUrl") ?: "", "UTF-8")
+                            imagenUrl = URLDecoder.decode(arguments.getString("platilloImagenUrl") ?: "", StandardCharsets.UTF_8.toString())
                         )
 
-                        // --> CAMBIO: La llamada ahora es mucho más simple. Ya no le pasamos las categorías.
+                        // Se le pasa la instancia compartida de CartViewModel a la pantalla de detalles
                         PantallaDetalles(
                             platillo = platillo,
-                            navController = navController
+                            navController = navController,
+                            cartViewModel = cartViewModel, // <-- CAMBIO CLAVE AQUÍ
+                            authViewModel = authViewModel
+                        )
+                    }
+                    composable(route = AppScreen.Login.route) {
+                        PantallaLogin(
+                            navController = navController,
+                            authViewModel = authViewModel
+                        )
+                    }
+
+                    // --- Ruta a la Pantalla del Carrito ---
+                    composable(route = AppScreen.Carrito.route) {
+                        // La pantalla del carrito también usa la misma instancia de CartViewModel
+                        PantallaCarrito(
+                            navController = navController,
+                            cartViewModel = cartViewModel // <-- CAMBIO CLAVE AQUÍ
                         )
                     }
                 }
@@ -121,15 +165,31 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
     // --- PANTALLA PRINCIPAL ---
     @Composable
     fun PantallaPrincipal(
         uiState: MainUiState,
         modifier: Modifier = Modifier,
-        onPlatilloClick: (Platillo) -> Unit
+        onPlatilloClick: (Platillo) -> Unit,
+        authViewModel: AuthViewModel, // <-- 1. RECIBE EL AUTH VIEWMODEL
+        navController: NavController  // <-- 2. RECIBE EL NAVCONTROLLER
     ) {
+        val isLoggedIn by authViewModel.isLoggedIn.collectAsStateWithLifecycle()
         LazyColumn(modifier = modifier.fillMaxSize()) {
-            item { CabeceraApp() }
+            item { CabeceraApp(
+                isLoggedIn = isLoggedIn,
+                onLogoutClick = {
+                    authViewModel.logout()
+                    // 5. NAVEGA A LA PANTALLA PRINCIPAL Y LIMPIA EL BACKSTACK
+                    // Esto evita que el usuario pueda volver a una pantalla anterior.
+                    navController.navigate(AppScreen.Principal.route) {
+                        popUpTo(AppScreen.Principal.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+            }
             item { BarraBusqueda() }
             item { SeccionCategorias(categorias = uiState.categorias) }
             item {
@@ -152,7 +212,8 @@ class MainActivity : ComponentActivity() {
 // --- COMPONENTES INDIVIDUALES (¡ESTA ES LA PARTE QUE FALTABA!) ---
 
     @Composable
-    fun CabeceraApp() {
+    fun CabeceraApp(isLoggedIn: Boolean, // <-- 1. RECIBE EL ESTADO DE LOGIN
+                    onLogoutClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -172,13 +233,24 @@ class MainActivity : ComponentActivity() {
                     fontWeight = FontWeight.Bold
                 )
             }
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_background), // Reemplaza con tu logo
-                contentDescription = "Avatar de usuario",
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-            )
+            if (isLoggedIn) {
+                IconButton(onClick = onLogoutClick) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                        contentDescription = "Cerrar sesión",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                Image(
+                    painter = painterResource(id = R.drawable.logo), // Tu logo original
+                    contentDescription = "Logo de la app",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                )
+            }
+
         }
     }
 
@@ -306,19 +378,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-@OptIn(ExperimentalMaterial3Api::class) // Necesario para TopAppBar
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaDetalles(
     platillo: Platillo,
-    navController: NavController
+    navController: NavController,
+    cartViewModel: CartViewModel, // <-- 1. ACEPTA EL VIEWMODEL AQUÍ
+    authViewModel: AuthViewModel // <-- RECIBE EL VIEWMODEL DE AUTH
 ) {
+    val isLoggedIn by authViewModel.isLoggedIn.collectAsStateWithLifecycle()
     Scaffold(
-        // --> CAMBIO: Usamos una TopAppBar en lugar de la cabecera genérica
         topBar = {
             TopAppBar(
                 title = { Text(platillo.nombre) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) { // Acción para volver
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver"
@@ -326,29 +400,45 @@ fun PantallaDetalles(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFFF5F5F5) // Mismo color de fondo
+                    containerColor = Color(0xFFF5F5F5)
                 )
             )
         },
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
-        // --> CAMBIO: El contenido es un LazyColumn que solo muestra el detalle
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues) // Aplicamos el padding de la TopAppBar
+                .padding(paddingValues)
         ) {
             item {
-                DetallePlatillo(platillo = platillo)
+                // 2. PASA LA ACCIÓN AL COMPOSABLE HIJO
+                DetallePlatillo(
+                    platillo = platillo,
+                    onAddToCart = {
+                        if (isLoggedIn) {
+                            // Si está logueado, añade al carrito
+                            cartViewModel.agregarAlCarrito(platillo)
+                            navController.navigate(AppScreen.Carrito.route)
+                        } else {
+                            // Si no, navega a la pantalla de login
+                            navController.navigate(AppScreen.Login.route)
+                        }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun DetallePlatillo(platillo: Platillo) {
+fun DetallePlatillo(
+    platillo: Platillo,
+    onAddToCart: () -> Unit // <-- 1. ACEPTA UNA FUNCIÓN LAMBDA
+) {
     Column(modifier = Modifier.padding(top = 16.dp)) {
-        // Imagen del platillo
+        // ... (Tu código para AsyncImage, Text del nombre, descripción y precio no cambia) ...
+
         AsyncImage(
             model = platillo.imagenUrl,
             contentDescription = "Imagen de ${platillo.nombre}",
@@ -362,9 +452,7 @@ fun DetallePlatillo(platillo: Platillo) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Contenedor para el resto de la información
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            // Nombre del platillo
             Text(
                 text = platillo.nombre,
                 style = MaterialTheme.typography.headlineLarge,
@@ -372,14 +460,12 @@ fun DetallePlatillo(platillo: Platillo) {
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Descripción
             Text(
                 text = platillo.descripcion,
                 style = MaterialTheme.typography.bodyLarge
             )
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Precio
             Text(
                 text = "$${String.format("%.2f", platillo.precio)}",
                 style = MaterialTheme.typography.headlineMedium,
@@ -392,34 +478,50 @@ fun DetallePlatillo(platillo: Platillo) {
 
             // Botón de acción
             Button(
-                onClick = { /* Lógica para añadir al carrito */ },
+                onClick = onAddToCart, // <-- 2. EJECUTA LA LAMBDA RECIBIDA
                 modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
                 Text("Añadir al Carrito", style = MaterialTheme.typography.titleMedium)
             }
-            Spacer(modifier = Modifier.height(16.dp)) // Espacio extra al final
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
-
     // --- VISTA PREVIA ---
+    @SuppressLint("ViewModelConstructorInComposable")
     @Preview(showBackground = true, showSystemUi = true)
     @Composable
+// Añade esta línea para suprimir el warning específico de la preview
+    @Suppress("viewModel_injection_in_preview")
     fun PantallaPrincipalPreview() {
         FastFeastTheme {
+            val navController = rememberNavController()
+            val context = LocalContext.current
+
+            // Esta línea es la que genera el warning, pero es correcta para la preview.
+            // La anotación @Suppress de arriba lo soluciona.
+            val authViewModel = AuthViewModel(UserPreferencesRepository(context))
+
             val previewState = MainUiState(
                 categorias = listOf(
                     Categoria("Hamburguesas", R.drawable.ic_launcher_foreground),
-                    Categoria("Pizza", R.drawable.ic_launcher_foreground)
+                    Categoria("Pizza", R.drawable.ic_launcher_foreground),
+                    Categoria("Bebidas", R.drawable.ic_launcher_foreground)
                 ),
                 platillos = listOf(
-                    Platillo(1, "Hamburguesa Clásica", "Carne de res, lechuga...", 10.99, "")
+                    Platillo(1, "Hamburguesa Clásica", "Carne de res, lechuga...", 10.99, ""),
+                    Platillo(2, "Pizza Margarita", "Salsa de tomate, mozzarella...", 12.50, "")
                 ),
                 isLoading = false
             )
-            // La preview no necesita el controlador de navegación
-            PantallaPrincipal(uiState = previewState, onPlatilloClick = {})
+
+            PantallaPrincipal(
+                uiState = previewState,
+                onPlatilloClick = {},
+                authViewModel = authViewModel,
+                navController = navController
+            )
         }
     }
 

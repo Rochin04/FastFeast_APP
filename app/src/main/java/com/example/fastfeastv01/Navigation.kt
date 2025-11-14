@@ -12,4 +12,6 @@ sealed class AppScreen(val route: String) {
             return "detalles/${platillo.id}/${platillo.nombre}/$encodedDesc/${platillo.precio}/$encodedUrl"
         }
     }
+    object Carrito : AppScreen("carrito")
+    object Login : AppScreen("login")
 }
