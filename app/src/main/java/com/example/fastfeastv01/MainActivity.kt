@@ -53,6 +53,12 @@ import ui.auth.AuthViewModel
 import ui.auth.AuthViewModelFactory
 import ui.auth.PantallaLogin
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import kotlinx.coroutines.launch
 
 // --- MODELOS DE DATOS ---
 data class Platillo(
@@ -89,75 +95,96 @@ class MainActivity : ComponentActivity() {
             FastFeastTheme {
                 val navController = rememberNavController()
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
 
-                // --- Grafo de Navegación ---
-                NavHost(navController = navController, startDestination = AppScreen.Principal.route) {
+                // --- NUEVO: Contenedor principal que permite un drawer ---
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        // --- NUEVO: Contenido del menú lateral ---
+                        AppDrawer(
+                            navController = navController,
+                            closeDrawer = { scope.launch { drawerState.close() } }
+                        )
+                    }
+                ) {
+                    // --- Grafo de Navegación (Ahora dentro del ModalNavigationDrawer) ---
+                    NavHost(navController = navController, startDestination = AppScreen.Principal.route) {
 
-                    // --- Ruta a la Pantalla Principal ---
-                    composable(route = AppScreen.Principal.route) {
-                        Scaffold(containerColor = Color(0xFFF5F5F5)) { innerPadding ->
-                            if (uiState.isLoading) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator()
+                        composable(route = AppScreen.Principal.route) {
+                            Scaffold(containerColor = Color(0xFFF5F5F5)) { innerPadding ->
+                                if (uiState.isLoading) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator()
+                                    }
+                                } else {
+                                    PantallaPrincipal(
+                                        uiState = uiState,
+                                        modifier = Modifier.padding(innerPadding),
+                                        onPlatilloClick = { platillo ->
+                                            navController.navigate(AppScreen.Detalles.createRoute(platillo))
+                                        },
+                                        authViewModel = authViewModel,
+                                        navController = navController,
+                                        // --- NUEVO: Pasamos la acción para abrir el drawer ---
+                                        onMenuClick = {
+                                            scope.launch { drawerState.open() }
+                                        }
+                                    )
                                 }
-                            } else {
-                                PantallaPrincipal(
-                                    uiState = uiState,
-                                    modifier = Modifier.padding(innerPadding),
-                                    onPlatilloClick = { platillo ->
-                                        navController.navigate(AppScreen.Detalles.createRoute(platillo))
-                                    },
-                                    authViewModel = authViewModel, // <-- AÑADE ESTO
-                                    navController = navController  // <-- AÑADE ESTO
-                                )
-
                             }
                         }
-                    }
 
-                    // --- Ruta a la Pantalla de Detalles ---
-                    composable(
-                        route = AppScreen.Detalles.route,
-                        arguments = listOf(
-                            navArgument("platilloId") { type = NavType.IntType },
-                            navArgument("platilloNombre") { type = NavType.StringType },
-                            navArgument("platilloDescripcion") { type = NavType.StringType },
-                            navArgument("platilloPrecio") { type = NavType.FloatType },
-                            navArgument("platilloImagenUrl") { type = NavType.StringType }
-                        )
-                    ) { backStackEntry ->
-                        val arguments = requireNotNull(backStackEntry.arguments)
-                        // Decodifica la URL y la descripción para obtener los valores originales
-                        val platillo = Platillo(
-                            id = arguments.getInt("platilloId"),
-                            nombre = arguments.getString("platilloNombre") ?: "",
-                            descripcion = URLDecoder.decode(arguments.getString("platilloDescripcion") ?: "", StandardCharsets.UTF_8.toString()),
-                            precio = arguments.getFloat("platilloPrecio").toDouble(),
-                            imagenUrl = URLDecoder.decode(arguments.getString("platilloImagenUrl") ?: "", StandardCharsets.UTF_8.toString())
-                        )
+                        // Ruta a Detalles (sin cambios)
+                        composable(
+                            route = AppScreen.Detalles.route,
+                            arguments = listOf(
+                                navArgument("platilloId") { type = NavType.IntType },
+                                navArgument("platilloNombre") { type = NavType.StringType },
+                                navArgument("platilloDescripcion") { type = NavType.StringType },
+                                navArgument("platilloPrecio") { type = NavType.FloatType },
+                                navArgument("platilloImagenUrl") { type = NavType.StringType }
+                            )
+                        ) { backStackEntry ->
+                            val arguments = requireNotNull(backStackEntry.arguments)
+                            val platillo = Platillo(
+                                id = arguments.getInt("platilloId"),
+                                nombre = arguments.getString("platilloNombre") ?: "",
+                                descripcion = URLDecoder.decode(arguments.getString("platilloDescripcion") ?: "", StandardCharsets.UTF_8.toString()),
+                                precio = arguments.getFloat("platilloPrecio").toDouble(),
+                                imagenUrl = URLDecoder.decode(arguments.getString("platilloImagenUrl") ?: "", StandardCharsets.UTF_8.toString())
+                            )
+                            PantallaDetalles(
+                                platillo = platillo,
+                                navController = navController,
+                                cartViewModel = cartViewModel,
+                                authViewModel = authViewModel
+                            )
+                        }
+                        // Ruta Login (sin cambios)
+                        composable(route = AppScreen.Login.route) {
+                            PantallaLogin(
+                                navController = navController,
+                                authViewModel = authViewModel
+                            )
+                        }
+                        // Ruta Carrito (sin cambios)
+                        composable(route = AppScreen.Carrito.route) {
+                            PantallaCarrito(
+                                navController = navController,
+                                cartViewModel = cartViewModel
+                            )
+                        }
 
-                        // Se le pasa la instancia compartida de CartViewModel a la pantalla de detalles
-                        PantallaDetalles(
-                            platillo = platillo,
-                            navController = navController,
-                            cartViewModel = cartViewModel, // <-- CAMBIO CLAVE AQUÍ
-                            authViewModel = authViewModel
-                        )
-                    }
-                    composable(route = AppScreen.Login.route) {
-                        PantallaLogin(
-                            navController = navController,
-                            authViewModel = authViewModel
-                        )
-                    }
+                        // --- NUEVO: Rutas para las nuevas pantallas del drawer ---
+                        composable(route = AppScreen.Perfil.route) {
+                            PantallaPerfil(navController = navController)
+                        }
 
-                    // --- Ruta a la Pantalla del Carrito ---
-                    composable(route = AppScreen.Carrito.route) {
-                        // La pantalla del carrito también usa la misma instancia de CartViewModel
-                        PantallaCarrito(
-                            navController = navController,
-                            cartViewModel = cartViewModel // <-- CAMBIO CLAVE AQUÍ
-                        )
+                        composable(route = AppScreen.Configuracion.route) {
+                            PantallaConfiguracion(navController = navController)
+                        }
                     }
                 }
             }
@@ -165,6 +192,105 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun AppDrawer(
+    navController: NavHostController,
+    closeDrawer: () -> Unit
+) {
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    ModalDrawerSheet {
+        // Un encabezado simple para el drawer
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "FastFeast",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        // Items de navegación
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Default.Menu, contentDescription = "Inicio") },
+            label = { Text("Inicio") },
+            selected = currentRoute == AppScreen.Principal.route,
+            onClick = {
+                navController.navigate(AppScreen.Principal.route) {
+                    popUpTo(AppScreen.Principal.route) { inclusive = true }
+                }
+                closeDrawer()
+            }
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Default.Person, contentDescription = "Perfil") },
+            label = { Text("Mi Perfil") },
+            selected = currentRoute == AppScreen.Perfil.route,
+            onClick = {
+                navController.navigate(AppScreen.Perfil.route)
+                closeDrawer()
+            }
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Configuración") },
+            label = { Text("Configuración") },
+            selected = currentRoute == AppScreen.Configuracion.route,
+            onClick = {
+                navController.navigate(AppScreen.Configuracion.route)
+                closeDrawer()
+            }
+        )
+    }
+}
+
+// --- NUEVO: Pantallas de ejemplo para Perfil y Configuración ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaPerfil(navController: NavController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Mi Perfil") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Text("Aquí va la información del perfil del usuario.")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PantallaConfiguracion(navController: NavController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Configuración") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Text("Aquí van las opciones de configuración.")
+        }
+    }
+}
 
     // --- PANTALLA PRINCIPAL ---
     @Composable
@@ -172,23 +298,24 @@ class MainActivity : ComponentActivity() {
         uiState: MainUiState,
         modifier: Modifier = Modifier,
         onPlatilloClick: (Platillo) -> Unit,
-        authViewModel: AuthViewModel, // <-- 1. RECIBE EL AUTH VIEWMODEL
-        navController: NavController  // <-- 2. RECIBE EL NAVCONTROLLER
+        authViewModel: AuthViewModel,
+        navController: NavController,
+        onMenuClick: () -> Unit // <-- NUEVO: Recibe la función para abrir el drawer
     ) {
         val isLoggedIn by authViewModel.isLoggedIn.collectAsStateWithLifecycle()
         LazyColumn(modifier = modifier.fillMaxSize()) {
-            item { CabeceraApp(
-                isLoggedIn = isLoggedIn,
-                onLogoutClick = {
-                    authViewModel.logout()
-                    // 5. NAVEGA A LA PANTALLA PRINCIPAL Y LIMPIA EL BACKSTACK
-                    // Esto evita que el usuario pueda volver a una pantalla anterior.
-                    navController.navigate(AppScreen.Principal.route) {
-                        popUpTo(AppScreen.Principal.route) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }
-            )
+            item {
+                CabeceraApp(
+                    isLoggedIn = isLoggedIn,
+                    onLogoutClick = {
+                        authViewModel.logout()
+                        navController.navigate(AppScreen.Principal.route) {
+                            popUpTo(AppScreen.Principal.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onMenuClick = onMenuClick // <-- MODIFICADO: Pasa la acción a la cabecera
+                )
             }
             item { BarraBusqueda() }
             item { SeccionCategorias(categorias = uiState.categorias) }
@@ -212,8 +339,11 @@ class MainActivity : ComponentActivity() {
 // --- COMPONENTES INDIVIDUALES (¡ESTA ES LA PARTE QUE FALTABA!) ---
 
     @Composable
-    fun CabeceraApp(isLoggedIn: Boolean, // <-- 1. RECIBE EL ESTADO DE LOGIN
-                    onLogoutClick: () -> Unit) {
+    fun CabeceraApp(
+        isLoggedIn: Boolean,
+        onLogoutClick: () -> Unit,
+        onMenuClick: () -> Unit // <-- NUEVO: Recibe la acción del menú
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -221,18 +351,29 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
-                Text(
-                    text = "¡Hola!",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
-                )
-                Text(
-                    text = "¿Qué te apetece hoy?",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+            // --- MODIFICADO: Se añade el ícono de menú ---
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onMenuClick) { // <-- NUEVO
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Abrir menú"
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = "¡Hola!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = "¿Qué te apetece hoy?",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+
             if (isLoggedIn) {
                 IconButton(onClick = onLogoutClick) {
                     Icon(
@@ -243,18 +384,17 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 Image(
-                    painter = painterResource(id = R.drawable.logo), // Tu logo original
+                    painter = painterResource(id = R.drawable.logo),
                     contentDescription = "Logo de la app",
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
                 )
             }
-
         }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun BarraBusqueda() {
         var textoBusqueda by remember { mutableStateOf("") }
@@ -516,11 +656,13 @@ fun DetallePlatillo(
                 isLoading = false
             )
 
+            // --- CORRECCIÓN AQUÍ ---
             PantallaPrincipal(
                 uiState = previewState,
                 onPlatilloClick = {},
                 authViewModel = authViewModel,
-                navController = navController
+                navController = navController,
+                onMenuClick = {} // <-- AÑADE ESTA LÍNEA
             )
         }
     }

@@ -6,12 +6,12 @@ sealed class AppScreen(val route: String) {
     object Principal : AppScreen("principal")
     object Detalles : AppScreen("detalles/{platilloId}/{platilloNombre}/{platilloDescripcion}/{platilloPrecio}/{platilloImagenUrl}") {
         fun createRoute(platillo: Platillo): String {
-            val encodedUrl = URLEncoder.encode(platillo.imagenUrl, "UTF-8")
-            // Reemplazamos los saltos de línea en la descripción para que no rompan la URL
-            val encodedDesc = URLEncoder.encode(platillo.descripcion, "UTF-8")
-            return "detalles/${platillo.id}/${platillo.nombre}/$encodedDesc/${platillo.precio}/$encodedUrl"
+            return "detalles/${platillo.id}/${platillo.nombre}/${platillo.descripcion}/${platillo.precio}/${platillo.imagenUrl}"
         }
     }
-    object Carrito : AppScreen("carrito")
     object Login : AppScreen("login")
+    object Carrito : AppScreen("carrito")
+    object Perfil : AppScreen("perfil") // <-- NUEVO
+    object Configuracion : AppScreen("configuracion") // <-- NUEVO
 }
+
