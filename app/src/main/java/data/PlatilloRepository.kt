@@ -1,29 +1,95 @@
 package data
 
-import com.example.fastfeastv01.Categoria
-import com.example.fastfeastv01.Platillo
+import com.example.fastfeastv01.data.Categoria
 import com.example.fastfeastv01.R
+import com.example.fastfeastv01.data.ComidaDto
+import com.example.fastfeastv01.data.CategoriaDto
+import com.example.fastfeastv01.data.CreatePlatilloRequest
+import com.example.fastfeastv01.data.Platillo
+import com.example.fastfeastv01.network.Api
 
-class PlatilloRepository {
+// Interfaz del repositorio
+interface PlatillosRepository {
+    suspend fun getPlatillos(): List<Platillo>
+    suspend fun getCategorias(): List<Categoria> // <--- Nuevo método
+    suspend fun createPlatillo(request: CreatePlatilloRequest): Boolean
+//    suspend fun getMerchantIdByUserId(userId: String): String? // Nuevo método
+    suspend fun getMerchantIdByUserId(userId: String): String?
+}
 
-    // Esta función obtiene la lista de categorías
-    fun getCategorias(): List<Categoria> {
-        return listOf(
-            Categoria("Hamburguesas", R.drawable.ic_launcher_foreground),
-            Categoria("Pizza", R.drawable.ic_launcher_foreground),
-            Categoria("Postres", R.drawable.ic_launcher_foreground),
-            Categoria("Bebidas", R.drawable.ic_launcher_foreground),
-            Categoria("Ensaladas", R.drawable.ic_launcher_foreground)
-        )
+// Implementación del repositorio
+class NetworkPlatillosRepository : PlatillosRepository {
+
+    override suspend fun getPlatillos(): List<Platillo> {
+        // 1. Obtenemos el objeto ComidasResponse
+        val response = Api.retrofitService.getComidas()
+        // 2. Extraemos la lista de la propiedad "data"
+        val comidasDtoList = response.data
+        // 3. Mapeamos la lista de DTO a la lista de objetos de la UI
+        return comidasDtoList.map { it.toPlatillo() }
     }
 
-    // Esta función obtiene la lista de platillos
-    fun getPlatillos(): List<Platillo> {
-        return listOf(
-            Platillo(1, "Hamburguesa Clásica", "Carne de res, lechuga, tomate y queso cheddar.", 10.99, "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500"),
-            Platillo(2, "Pizza Pepperoni", "Salsa de tomate, mozzarella y abundante pepperoni.", 12.50, "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=500"),
-            Platillo(3, "Tarta de Chocolate", "Intenso sabor a chocolate con una base crujiente.", 6.75, "https://images.unsplash.com/photo-1579609249769-d3439b1a7eea?w=500"),
-            Platillo(4, "Hamburguesa BBQ", "Carne jugosa con aros de cebolla y salsa BBQ.", 11.99, "https://images.unsplash.com/photo-1603569283847-aa295f0d016a?w=500")
-        )
+    override suspend fun getCategorias(): List<Categoria> {
+        // 1. Obtenemos el objeto CategoriasResponse
+        val response = Api.retrofitService.getCategorias()
+        // 2. Extraemos la lista de la propiedad "data"
+        val categoriasDtoList = response.data
+        // 3. Mapeamos la lista de DTO a la lista de objetos de la UI
+        return categoriasDtoList.map { dto ->
+            Categoria(
+                id = dto.id,
+                nombre = dto.nombre,
+                // Asignamos un icono local basado en el nombre que viene de la API
+                icono = obtenerIconoPorNombre(dto.nombre)
+            )
+        }
     }
+    override suspend fun createPlatillo(request: CreatePlatilloRequest): Boolean {
+        return try {
+            // Llamamos a la API
+            val response = Api.retrofitService.createPlatillo(request)
+
+            // Si obtenemos un ID en la respuesta, asumimos éxito
+            !response.data.id.isNullOrEmpty()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Si falla la petición (400, 500, sin internet), devolvemos false
+            throw e // O return false, dependiendo de cómo quieras manejarlo en el ViewModel
+        }
+    }
+    override suspend fun getMerchantIdByUserId(userId: String): String? {
+        return try {
+            // Llamamos al endpoint nuevo
+            val response = Api.retrofitService.getMerchantByOwnerId(userId)
+            // Retornamos el ID REAL del comercio (Ej: a09951f1...)
+            response.data.id
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null // Si falla o no existe, retornamos null
+        }
+    }
+
+    // Función auxiliar para asignar iconos locales según el texto que viene de la API
+    private fun obtenerIconoPorNombre(nombre: String): Int {
+        return when (nombre.lowercase()) {
+            "hamburguesas", "burger" -> R.drawable.ic_launcher_foreground // TODO: Cambia por tus iconos reales
+            "pizzas", "pizza" -> R.drawable.ic_launcher_foreground       // TODO: Cambia por tus iconos reales
+            "bebidas", "drinks" -> R.drawable.ic_launcher_foreground     // TODO: Cambia por tus iconos reales
+            else -> R.drawable.ic_launcher_foreground // Icono por defecto
+        }
+    }
+}
+
+// Función de extensión para convertir los datos
+fun ComidaDto.toPlatillo(): Platillo {
+    return Platillo(
+        // El ID en el JSON es un String (UUID), pero tu modelo de UI espera un Int.
+        // Como no podemos convertir un UUID a Int, usamos un valor temporal como 0 o el hashcode.
+        // O mejor aún, cambia el 'id' en tu data class 'Platillo' a String.
+        id = this.id, // Solución temporal. Recomiendo cambiar Platillo.id a String.
+        nombre = this.nombre,
+        descripcion = this.description,
+        precio = this.price.toDoubleOrNull() ?: 0.0,
+        imagenUrl = this.imagenUrl
+    )
 }
