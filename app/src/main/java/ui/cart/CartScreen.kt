@@ -2,7 +2,7 @@ package ui.cart
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.items // IMPORT VITAL
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -14,13 +14,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.example.fastfeastv01.Platillo
+import com.example.fastfeastv01.data.Platillo // TU MODELO
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaCarrito(
     navController: NavController,
-    cartViewModel: CartViewModel = viewModel() // Obtiene la instancia del ViewModel
+    cartViewModel: CartViewModel = viewModel()
 ) {
     val uiState by cartViewModel.uiState.collectAsState()
 
@@ -49,7 +49,8 @@ fun PantallaCarrito(
                 Text("Tu carrito está vacío.")
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(uiState.platillos) { platillo ->
+                    // AQUI ESTA LA CORRECCION CLAVE:
+                    items(items = uiState.platillos) { platillo: Platillo ->
                         ItemCarrito(platillo)
                         Divider()
                     }

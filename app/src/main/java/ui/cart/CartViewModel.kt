@@ -1,18 +1,19 @@
 package ui.cart
 
 import androidx.lifecycle.ViewModel
-import com.example.fastfeastv01.Platillo
+import com.example.fastfeastv01.data.Platillo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import ui.auth.AuthViewModel
 
 data class CartUiState(
     val platillos: List<Platillo> = emptyList(),
     val total: Double = 0.0
 )
 
-class CartViewModel : ViewModel() {
+class CartViewModel(private val authViewModel: AuthViewModel) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CartUiState())
     val uiState: StateFlow<CartUiState> = _uiState.asStateFlow()
